@@ -22,8 +22,8 @@ class AnalyzerError(Exception):
 
 # Pollinations API Configuration
 POLLINATIONS_API_KEY = os.getenv('POLLINATION_API_KEY', '')
-POLLINATIONS_MODEL = os.getenv('POLLINATION_MODEL', 'pollinations/gemini-search')
-POLLINATIONS_API_URL = "https://text.pollinations.ai/openai"
+POLLINATIONS_MODEL = os.getenv('POLLINATION_MODEL', 'openai')
+POLLINATIONS_API_URL = "https://gen.pollinations.ai/v1/chat/completions"
 
 
 def analyze_skill_description(skill_text: str, custom_prompt: Optional[str] = None) -> Dict[str, Any]:
