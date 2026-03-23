@@ -26,6 +26,10 @@ RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
 RATE_LIMIT_MAX_REQUESTS = 100  # Max requests per hour per IP
 RATE_LIMIT_HEADER = 'X-RateLimit-'
 
+# API Key Authentication
+# Optional: Set FRONTEND_API_KEY to restrict access to specific frontend only
+FRONTEND_API_KEY = os.environ.get('FRONTEND_API_KEY', None)
+
 # Simple in-memory rate limiter (for serverless, this resets per deployment)
 # For production, consider using Redis or similar
 rate_limit_store = {}
@@ -90,6 +94,29 @@ def check_rate_limit(ip):
     remaining = max(0, RATE_LIMIT_MAX_REQUESTS - len(entry['requests']))
     
     return True, remaining, reset_time
+
+
+def validate_api_key(environ):
+    """
+    Validate API key from request headers.
+    
+    Returns:
+        tuple: (valid: bool, error_message: str or None)
+    """
+    # If FRONTEND_API_KEY is not set, skip validation (open access)
+    if not FRONTEND_API_KEY:
+        return True, None
+    
+    # Get API key from headers
+    api_key = environ.get('HTTP_X_API_KEY', '')
+    
+    if not api_key:
+        return False, 'Missing API key. Please provide X-API-Key header.'
+    
+    if api_key != FRONTEND_API_KEY:
+        return False, 'Invalid API key.'
+    
+    return True, None
 
 
 def analyze_skill_from_url(skill_url: str, output_format: str = 'markdown') -> dict:
@@ -168,7 +195,7 @@ def application(environ, start_response):
         ('Content-Type', 'application/json'),
         ('Access-Control-Allow-Origin', '*'),
         ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
-        ('Access-Control-Allow-Headers', 'Content-Type')
+        ('Access-Control-Allow-Headers', 'Content-Type, X-API-Key')
     ]
     
     # Handle preflight OPTIONS request
@@ -186,8 +213,9 @@ def application(environ, start_response):
         start_response('200 OK', base_headers)
         return [json.dumps(response_body).encode('utf-8')]
     
-    # Rate limiting for /analyze endpoint
+    # Rate limiting and API key validation for /analyze endpoint
     if path == '/analyze':
+        # Check rate limit
         allowed, remaining, reset_time = check_rate_limit(client_ip)
         
         # Add rate limit headers to all responses
@@ -205,6 +233,21 @@ def application(environ, start_response):
                 'retry_after': reset_time - int(time.time())
             }
             start_response('429 Too Many Requests', rate_limit_headers)
+            return [json.dumps(response_body).encode('utf-8')]
+        
+        # Validate API key (if enabled)
+        api_key_valid, api_key_error = validate_api_key(environ)
+        if not api_key_valid:
+            response_body = {
+                'error': 'Authentication failed',
+                'message': api_key_error,
+                'rate_limit': {
+                    'limit': RATE_LIMIT_MAX_REQUESTS,
+                    'remaining': remaining,
+                    'reset': reset_time
+                }
+            }
+            start_response('401 Unauthorized', rate_limit_headers)
             return [json.dumps(response_body).encode('utf-8')]
         
         if request_method == 'GET':
