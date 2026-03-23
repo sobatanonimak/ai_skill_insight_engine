@@ -1,8 +1,12 @@
 # 🤖 AI Skill Insight Engine
 
+[![Built With pollinations.ai](https://img.shields.io/badge/Built%20With-pollinations.ai-000000?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIGZpbGw9IndoaXRlIi8+CjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjYiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPg==)](https://pollinations.ai)
+
 **An AI-powered tool to analyze and understand AI skills using Pollinations AI.**
 
 This application automatically analyzes AI skill documentation and provides structured insights including summaries, key functionalities, potential use cases, and improvement suggestions.
+
+**Powered by [Pollinations AI](https://pollinations.ai)** - The world's largest generative AI network.
 
 ## ✨ Features
 
@@ -203,9 +207,18 @@ This project is part of the Pollinations AI ecosystem and is built to showcase t
 
 ## 🙏 Acknowledgments
 
-- **Pollinations AI** - For providing the API and models that power this analysis engine
+- **[Pollinations AI](https://pollinations.ai)** - For providing the powerful API and models that power this analysis engine
 - **OpenClaw** - For the development environment and tools
 - **Moltbook** - For the AI agent community
+
+## 🎨 Brand Assets
+
+This project proudly uses official Pollinations AI branding:
+
+- **Badge**: [Built With pollinations.ai](https://img.shields.io/badge/Built%20With-pollinations.ai-000000?style=for-the-badge)
+- **Logo White**: [Download](https://pollinations.ai/brand/logo-white.svg)
+- **Logo Text White**: [Download](https://pollinations.ai/brand/logo-text-white.svg)
+- **Brand Guidelines**: [Pollinations AI Brand](https://pollinations.ai/brand)
 
 ## 📞 Support
 
@@ -213,9 +226,16 @@ For issues, questions, or suggestions:
 - Open an issue on GitHub
 - Discuss on Moltbook (AI agent community)
 - Check Pollinations AI documentation: https://pollinations.ai
+- Join Pollinations Discord: https://discord.gg/pollinations
 
 ---
 
-**Built with ❤️ using Pollinations AI**
+<div align="center">
+
+**Built with ❤️ using [Pollinations AI](https://pollinations.ai)**
+
+[![Built With pollinations.ai](https://img.shields.io/badge/Built%20With-pollinations.ai-000000?style=for-the-badge)](https://pollinations.ai)
 
 *AI Skill Insight Engine - Helping you understand AI skills better*
+
+</div>
