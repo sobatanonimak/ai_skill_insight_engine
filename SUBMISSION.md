@@ -1,5 +1,3 @@
-# SUBMISSION TEXT - Copy dan paste ke GitHub issue Pollinations
-
 ---
 name: AI Skill Insight Engine
 description: Analyzes AI skill documentation and provides structured insights using Pollinations AI
