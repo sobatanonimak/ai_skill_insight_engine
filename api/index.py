@@ -3,11 +3,14 @@ Vercel Serverless Function - AI Skill Insight Engine API
 
 This file serves as the entrypoint for Vercel deployment.
 Uses WSGI-compatible interface for Vercel Python runtime.
+Includes rate limiting to prevent abuse.
 """
 
 import json
 import os
 import sys
+import time
+import hashlib
 from urllib.parse import parse_qs, urlparse
 
 # Add parent directory to path for imports
@@ -17,6 +20,76 @@ from fetcher import fetch_content_from_url, FetcherError
 from parser import parse_content, ParserError
 from analyzer import analyze_skill_description, AnalyzerError
 from generator import generate_markdown_report, generate_json_output, generate_html_report, GeneratorError
+
+# Rate Limiting Configuration
+RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
+RATE_LIMIT_MAX_REQUESTS = 100  # Max requests per hour per IP
+RATE_LIMIT_HEADER = 'X-RateLimit-'
+
+# Simple in-memory rate limiter (for serverless, this resets per deployment)
+# For production, consider using Redis or similar
+rate_limit_store = {}
+
+
+def get_client_ip(environ):
+    """Extract client IP from WSGI environ"""
+    # Check for forwarded headers (Vercel/proxy)
+    forwarded_for = environ.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded_for:
+        # Take the first IP in the chain
+        return forwarded_for.split(',')[0].strip()
+    
+    # Fall back to remote address
+    return environ.get('REMOTE_ADDR', 'unknown')
+
+
+def get_rate_limit_key(ip):
+    """Generate rate limit key from IP"""
+    # Use hash to anonymize IP
+    return hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
+def check_rate_limit(ip):
+    """
+    Check if request is within rate limit.
+    
+    Returns:
+        tuple: (allowed: bool, remaining: int, reset_time: int)
+    """
+    current_time = time.time()
+    key = get_rate_limit_key(ip)
+    
+    # Clean old entries and get/create current entry
+    if key in rate_limit_store:
+        entry = rate_limit_store[key]
+        # Remove requests outside the window
+        entry['requests'] = [
+            req_time for req_time in entry['requests']
+            if current_time - req_time < RATE_LIMIT_WINDOW
+        ]
+    else:
+        entry = {'requests': []}
+        rate_limit_store[key] = entry
+    
+    # Check if limit exceeded
+    request_count = len(entry['requests'])
+    remaining = max(0, RATE_LIMIT_MAX_REQUESTS - request_count)
+    
+    # Calculate reset time (end of current window)
+    if entry['requests']:
+        oldest_request = min(entry['requests'])
+        reset_time = int(oldest_request + RATE_LIMIT_WINDOW)
+    else:
+        reset_time = int(current_time + RATE_LIMIT_WINDOW)
+    
+    if request_count >= RATE_LIMIT_MAX_REQUESTS:
+        return False, 0, reset_time
+    
+    # Record this request
+    entry['requests'].append(current_time)
+    remaining = max(0, RATE_LIMIT_MAX_REQUESTS - len(entry['requests']))
+    
+    return True, remaining, reset_time
 
 
 def analyze_skill_from_url(skill_url: str, output_format: str = 'markdown') -> dict:
@@ -85,12 +158,13 @@ def application(environ, start_response):
     request_method = environ.get('REQUEST_METHOD', 'GET')
     path = environ.get('PATH_INFO', '/')
     query_string = environ.get('QUERY_STRING', '')
+    client_ip = get_client_ip(environ)
     
     # Parse query parameters
     query_params = parse_qs(query_string)
     
-    # CORS headers
-    headers = [
+    # Base headers (without rate limit headers yet)
+    base_headers = [
         ('Content-Type', 'application/json'),
         ('Access-Control-Allow-Origin', '*'),
         ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
@@ -99,21 +173,40 @@ def application(environ, start_response):
     
     # Handle preflight OPTIONS request
     if request_method == 'OPTIONS':
-        start_response('200 OK', headers)
+        start_response('200 OK', base_headers)
         return [b'']
     
-    # Health check endpoint
+    # Health check endpoint (no rate limit)
     if path == '/health':
         response_body = {
             'status': 'healthy',
             'service': 'AI Skill Insight Engine',
             'version': '1.0'
         }
-        start_response('200 OK', headers)
+        start_response('200 OK', base_headers)
         return [json.dumps(response_body).encode('utf-8')]
     
-    # Main analysis endpoint
+    # Rate limiting for /analyze endpoint
     if path == '/analyze':
+        allowed, remaining, reset_time = check_rate_limit(client_ip)
+        
+        # Add rate limit headers to all responses
+        rate_limit_headers = base_headers + [
+            (f'{RATE_LIMIT_HEADER}Limit', str(RATE_LIMIT_MAX_REQUESTS)),
+            (f'{RATE_LIMIT_HEADER}Remaining', str(remaining)),
+            (f'{RATE_LIMIT_HEADER}Reset', str(reset_time))
+        ]
+        
+        if not allowed:
+            # Rate limit exceeded
+            response_body = {
+                'error': 'Rate limit exceeded',
+                'message': f'Maximum {RATE_LIMIT_MAX_REQUESTS} requests per hour',
+                'retry_after': reset_time - int(time.time())
+            }
+            start_response('429 Too Many Requests', rate_limit_headers)
+            return [json.dumps(response_body).encode('utf-8')]
+        
         if request_method == 'GET':
             # Get URL parameter
             skill_url_list = query_params.get('url', [])
@@ -123,9 +216,14 @@ def application(environ, start_response):
             if not skill_url:
                 response_body = {
                     'error': 'Missing required parameter: url',
-                    'usage': '/analyze?url=<skill_url>&format=<markdown|json|html>'
+                    'usage': '/analyze?url=<skill_url>&format=<markdown|json|html>',
+                    'rate_limit': {
+                        'limit': RATE_LIMIT_MAX_REQUESTS,
+                        'remaining': remaining,
+                        'reset': reset_time
+                    }
                 }
-                start_response('400 Bad Request', headers)
+                start_response('400 Bad Request', rate_limit_headers)
                 return [json.dumps(response_body).encode('utf-8')]
             
             # Run analysis
@@ -137,12 +235,15 @@ def application(environ, start_response):
                     ('Content-Type', content_type),
                     ('Access-Control-Allow-Origin', '*'),
                     ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
-                    ('Access-Control-Allow-Headers', 'Content-Type')
+                    ('Access-Control-Allow-Headers', 'Content-Type'),
+                    (f'{RATE_LIMIT_HEADER}Limit', str(RATE_LIMIT_MAX_REQUESTS)),
+                    (f'{RATE_LIMIT_HEADER}Remaining', str(remaining)),
+                    (f'{RATE_LIMIT_HEADER}Reset', str(reset_time))
                 ]
                 start_response('200 OK', headers)
                 return [result.get('report', '').encode('utf-8')]
             else:
-                start_response('500 Internal Server Error', headers)
+                start_response('500 Internal Server Error', rate_limit_headers)
                 return [json.dumps(result).encode('utf-8')]
         
         elif request_method == 'POST':
@@ -152,26 +253,40 @@ def application(environ, start_response):
                 request_body = environ['wsgi.input'].read(content_length).decode('utf-8')
                 data = json.loads(request_body) if request_body else {}
             except (json.JSONDecodeError, ValueError) as e:
-                response_body = {'error': 'Invalid JSON'}
-                start_response('400 Bad Request', headers)
+                response_body = {
+                    'error': 'Invalid JSON',
+                    'rate_limit': {
+                        'limit': RATE_LIMIT_MAX_REQUESTS,
+                        'remaining': remaining,
+                        'reset': reset_time
+                    }
+                }
+                start_response('400 Bad Request', rate_limit_headers)
                 return [json.dumps(response_body).encode('utf-8')]
             
             skill_url = data.get('url')
             output_format = data.get('format', 'markdown')
             
             if not skill_url:
-                response_body = {'error': 'Missing required field: url'}
-                start_response('400 Bad Request', headers)
+                response_body = {
+                    'error': 'Missing required field: url',
+                    'rate_limit': {
+                        'limit': RATE_LIMIT_MAX_REQUESTS,
+                        'remaining': remaining,
+                        'reset': reset_time
+                    }
+                }
+                start_response('400 Bad Request', rate_limit_headers)
                 return [json.dumps(response_body).encode('utf-8')]
             
             # Run analysis
             result = analyze_skill_from_url(skill_url, output_format)
             
             if result.get('success'):
-                start_response('200 OK', headers)
+                start_response('200 OK', rate_limit_headers)
                 return [json.dumps(result).encode('utf-8')]
             else:
-                start_response('500 Internal Server Error', headers)
+                start_response('500 Internal Server Error', rate_limit_headers)
                 return [json.dumps(result).encode('utf-8')]
     
     # Default: show API usage
@@ -183,9 +298,14 @@ def application(environ, start_response):
             'GET /analyze?url=<skill_url>&format=<markdown|json|html>': 'Analyze AI skill',
             'POST /analyze': 'Analyze AI skill with JSON body {"url": "...", "format": "..."}'
         },
-        'example': '/analyze?url=https://example.com/skill.md&format=markdown'
+        'example': '/analyze?url=https://example.com/skill.md&format=markdown',
+        'rate_limit': {
+            'limit': RATE_LIMIT_MAX_REQUESTS,
+            'window': f'{RATE_LIMIT_WINDOW} seconds (1 hour)',
+            'note': 'Rate limiting is per IP address'
+        }
     }
-    start_response('200 OK', headers)
+    start_response('200 OK', base_headers)
     return [json.dumps(response_body, indent=2).encode('utf-8')]
 
 
