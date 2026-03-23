@@ -196,3 +196,7 @@ def main(request):
             'example': '/analyze?url=https://example.com/skill.md&format=markdown'
         }, indent=2)
     }
+
+
+# Export handler for Vercel
+app = main
