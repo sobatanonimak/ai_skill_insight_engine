@@ -7,11 +7,9 @@ It exposes the AI skill analysis as an HTTP API endpoint.
 
 import json
 import os
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-
-# Import core modules
 import sys
+
+# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fetcher import fetch_content_from_url, FetcherError
@@ -20,145 +18,9 @@ from analyzer import analyze_skill_description, AnalyzerError
 from generator import generate_markdown_report, generate_json_output, generate_html_report, GeneratorError
 
 
-class APIHandler(BaseHTTPRequestHandler):
-    """HTTP Request Handler for AI Skill Insight Engine API"""
-    
-    def do_GET(self):
-        """Handle GET requests"""
-        parsed_path = urlparse(self.path)
-        
-        # Health check endpoint
-        if parsed_path.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            response = {'status': 'healthy', 'service': 'AI Skill Insight Engine'}
-            self.wfile.write(json.dumps(response).encode())
-            return
-        
-        # Main analysis endpoint
-        if parsed_path.path == '/analyze':
-            query_params = parse_qs(parsed_path.query)
-            
-            # Get URL parameter
-            skill_url = query_params.get('url', [None])[0]
-            output_format = query_params.get('format', ['markdown'])[0]
-            
-            if not skill_url:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                error = {'error': 'Missing required parameter: url'}
-                self.wfile.write(json.dumps(error).encode())
-                return
-            
-            # Run analysis
-            try:
-                result = analyze_skill_from_url(skill_url, output_format)
-                
-                if result.get('success'):
-                    self.send_response(200)
-                    content_type = 'text/markdown' if output_format == 'markdown' else 'application/json' if output_format == 'json' else 'text/html'
-                    self.send_header('Content-Type', content_type)
-                    self.end_headers()
-                    self.wfile.write(result.get('report', '').encode())
-                else:
-                    self.send_response(500)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(result).encode())
-            
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                error = {'error': str(e)}
-                self.wfile.write(json.dumps(error).encode())
-                return
-        
-        # Default: show usage
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        usage = {
-            'service': 'AI Skill Insight Engine',
-            'version': '1.0',
-            'endpoints': {
-                '/health': 'GET - Health check',
-                '/analyze?url=<skill_url>&format=<markdown|json|html>': 'GET - Analyze AI skill'
-            },
-            'example': '/analyze?url=https://example.com/skill.md&format=markdown'
-        }
-        self.wfile.write(json.dumps(usage, indent=2).encode())
-    
-    def do_POST(self):
-        """Handle POST requests"""
-        parsed_path = urlparse(self.path)
-        
-        if parsed_path.path == '/analyze':
-            # Read request body
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8')
-            
-            try:
-                data = json.loads(body)
-            except json.JSONDecodeError:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                error = {'error': 'Invalid JSON'}
-                self.wfile.write(json.dumps(error).encode())
-                return
-            
-            skill_url = data.get('url')
-            output_format = data.get('format', 'markdown')
-            
-            if not skill_url:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                error = {'error': 'Missing required field: url'}
-                self.wfile.write(json.dumps(error).encode())
-                return
-            
-            # Run analysis
-            try:
-                result = analyze_skill_from_url(skill_url, output_format)
-                
-                if result.get('success'):
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(result).encode())
-                else:
-                    self.send_response(500)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(result).encode())
-            
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                error = {'error': str(e)}
-                self.wfile.write(json.dumps(error).encode())
-                return
-        
-        # Default
-        self.send_response(404)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        error = {'error': 'Not found'}
-        self.wfile.write(json.dumps(error).encode())
-    
-    def log_message(self, format, *args):
-        """Override to suppress default logging"""
-        pass
-
-
 def analyze_skill_from_url(skill_url: str, output_format: str = 'markdown') -> dict:
     """
-    Analyze a skill from URL (same logic as app.py but returns dict).
+    Analyze a skill from URL.
     
     Args:
         skill_url: URL of the skill documentation
@@ -208,15 +70,129 @@ def analyze_skill_from_url(skill_url: str, output_format: str = 'markdown') -> d
     }
 
 
-# Vercel serverless function handler
-def handler(request):
-    """Vercel serverless function entrypoint"""
-    return APIHandler
-
-
-# For local testing
-if __name__ == "__main__":
-    from http.server import HTTPServer
-    server = HTTPServer(('localhost', 8000), APIHandler)
-    print("Server running at http://localhost:8000")
-    server.serve_forever()
+def main(request):
+    """
+    Vercel Python serverless function handler.
+    
+    Args:
+        request: Vercel request object with method, headers, query, body, etc.
+    
+    Returns:
+        Response dict with statusCode, headers, and body
+    """
+    # CORS headers
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    }
+    
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': ''
+        }
+    
+    # Parse query parameters
+    query_params = request.query or {}
+    path = request.path or '/'
+    
+    # Health check endpoint
+    if path == '/health':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps({
+                'status': 'healthy',
+                'service': 'AI Skill Insight Engine',
+                'version': '1.0'
+            })
+        }
+    
+    # Main analysis endpoint
+    if path == '/analyze':
+        # Handle GET request
+        if request.method == 'GET':
+            skill_url = query_params.get('url', [None])[0] if isinstance(query_params.get('url'), list) else query_params.get('url')
+            output_format = query_params.get('format', ['markdown'])[0] if isinstance(query_params.get('format'), list) else query_params.get('format', 'markdown')
+            
+            if not skill_url:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Missing required parameter: url', 'usage': '/analyze?url=<skill_url>&format=<markdown|json|html>'})
+                }
+            
+            # Run analysis
+            result = analyze_skill_from_url(skill_url, output_format or 'markdown')
+            
+            if result.get('success'):
+                content_type = 'text/markdown' if output_format == 'markdown' else 'application/json' if output_format == 'json' else 'text/html'
+                return {
+                    'statusCode': 200,
+                    'headers': {**headers, 'Content-Type': content_type},
+                    'body': result.get('report', '')
+                }
+            else:
+                return {
+                    'statusCode': 500,
+                    'headers': headers,
+                    'body': json.dumps(result)
+                }
+        
+        # Handle POST request
+        elif request.method == 'POST':
+            try:
+                # Parse JSON body
+                body = json.loads(request.body) if request.body else {}
+            except json.JSONDecodeError:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Invalid JSON'})
+                }
+            
+            skill_url = body.get('url')
+            output_format = body.get('format', 'markdown')
+            
+            if not skill_url:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Missing required field: url'})
+                }
+            
+            # Run analysis
+            result = analyze_skill_from_url(skill_url, output_format)
+            
+            if result.get('success'):
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'body': json.dumps(result)
+                }
+            else:
+                return {
+                    'statusCode': 500,
+                    'headers': headers,
+                    'body': json.dumps(result)
+                }
+    
+    # Default: show API usage
+    return {
+        'statusCode': 200,
+        'headers': headers,
+        'body': json.dumps({
+            'service': 'AI Skill Insight Engine',
+            'version': '1.0',
+            'endpoints': {
+                'GET /health': 'Health check',
+                'GET /analyze?url=<skill_url>&format=<markdown|json|html>': 'Analyze AI skill',
+                'POST /analyze': 'Analyze AI skill with JSON body {"url": "...", "format": "..."}'
+            },
+            'example': '/analyze?url=https://example.com/skill.md&format=markdown'
+        }, indent=2)
+    }
