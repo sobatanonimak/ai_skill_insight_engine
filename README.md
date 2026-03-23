@@ -102,7 +102,33 @@ POLLINATION_API_KEY=your_api_key_here
 # Optional: Model to use for analysis
 # Available models: pollinations/gemini-search, pollinations/kimi, pollinations/deepseek, etc.
 POLLINATION_MODEL=pollinations/gemini-search
+
+# Optional: Frontend API Key for authentication
+# Set this to restrict API access to your frontend only
+# Generate a secure random string (e.g., using: openssl rand -hex 32)
+# FRONTEND_API_KEY=your_secure_random_key_here
 ```
+
+### 🔐 Security: Frontend API Key
+
+To restrict API access so only your frontend can use it:
+
+1. **Generate a secure API key**:
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. **Set in backend** (Vercel Environment Variables):
+   - Variable name: `FRONTEND_API_KEY`
+   - Value: The generated key from step 1
+
+3. **Set in frontend** (Vercel Environment Variables):
+   - Variable name: `NEXT_PUBLIC_API_KEY`
+   - Value: The **same** key from step 1
+
+When enabled, the backend will require a valid `X-API-Key` header on all `/analyze` requests. Requests without a valid key will receive a `401 Unauthorized` error.
+
+**Note:** The `/health` endpoint remains open for monitoring purposes.
 
 ### Available Models
 
